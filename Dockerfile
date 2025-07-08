@@ -1,13 +1,19 @@
-ARG ARCH="amd64"
-ARG OS="linux"
-FROM quay.io/prometheus/busybox-${OS}-${ARCH}:latest
-LABEL maintainer="The Prometheus Authors <prometheus-developers@googlegroups.com>"
+# Stage 1: Build using Go 1.23 beta
+FROM golang as builder
 
-ARG ARCH="amd64"
-ARG OS="linux"
-COPY .build/${OS}-${ARCH}/statsd_exporter /bin/statsd_exporter
+WORKDIR /src
+COPY . .
 
-USER        65534
-EXPOSE      9102 9125 9125/udp
-HEALTHCHECK CMD wget --spider -S "http://localhost:9102/metrics" -T 60 2>&1 || exit 1
-ENTRYPOINT  [ "/bin/statsd_exporter" ]
+# Build the binary
+RUN CGO_ENABLED=0 GOOS=linux go build -o /statsd_exporter .
+
+# Stage 2: Minimal runtime image
+FROM gcr.io/distroless/static:nonroot
+
+COPY --from=builder /statsd_exporter /bin/statsd_exporter
+
+USER nonroot
+EXPOSE 9102
+EXPOSE 8125/udp
+
+ENTRYPOINT ["/bin/statsd_exporter"]
